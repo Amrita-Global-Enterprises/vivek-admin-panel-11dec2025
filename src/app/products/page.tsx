@@ -264,6 +264,10 @@ export default function ProductPage() {
   // State for productTag options (dynamic based on products)
   const [productTagOptions, setProductTagOptions] = useState<string[]>([]);
   
+  // State for gender and clothType options (dynamic based on products)
+  const [genderOptions, setGenderOptions] = useState<string[]>([]);
+  const [clothTypeOptions, setClothTypeOptions] = useState<string[]>([]);
+  
   // Helper function to safely get image URL
   const getSafeImageUrl = (img: string | undefined | null): string | null => {
     if (!img) return null;
@@ -347,6 +351,8 @@ export default function ProductPage() {
       // Extract unique leadtime values from all products
       const uniqueLeadtimes = new Set<string>();
       const uniqueProductTags = new Set<string>();
+      const uniqueGenders = new Set<string>();
+      const uniqueClothTypes = new Set<string>();
       
       productsData.forEach(product => {
         if (product.leadtime && Array.isArray(product.leadtime)) {
@@ -364,11 +370,54 @@ export default function ProductPage() {
             }
           });
         }
+        
+        // Extract gender and clothType from subsuitable data
+        if (product.subsuitable && Array.isArray(product.subsuitable)) {
+          product.subsuitable.forEach(item => {
+            if (typeof item === 'string') {
+              // First split by comma to handle comma-separated values like "Malwww-Shirtwww-100,men-tshirt-80"
+              const commaSeparatedItems = item.includes(',') ? item.split(',').map(s => s.trim()).filter(Boolean) : [item];
+              
+              commaSeparatedItems.forEach(singleItem => {
+                const parts = singleItem.split('-');
+                if (parts.length >= 2) {
+                  const gender = parts[0]?.trim();
+                  const clothType = parts[1]?.trim();
+                  if (gender) uniqueGenders.add(gender);
+                  if (clothType) uniqueClothTypes.add(clothType);
+                }
+              });
+            }
+          });
+        }
       });
       
       // Sort all options alphabetically
       setLeadtimeOptions(Array.from(uniqueLeadtimes).sort());
       setProductTagOptions(Array.from(uniqueProductTags).sort());
+      
+      // Debug: Log the extracted data
+      console.log('Products data:', productsData);
+      console.log('Unique genders found:', Array.from(uniqueGenders));
+      console.log('Unique cloth types found:', Array.from(uniqueClothTypes));
+      console.log('Sample subsuitable processing:', productsData.slice(0, 2).map(p => ({
+        name: p.name,
+        subsuitable: p.subsuitable,
+        parsed: p.subsuitable?.map(item => {
+          if (typeof item === 'string') {
+            const commaSeparated = item.includes(',') ? item.split(',').map(s => s.trim()).filter(Boolean) : [item];
+            return commaSeparated.map(singleItem => {
+              const parts = singleItem.split('-');
+              return { original: singleItem, gender: parts[0], clothType: parts[1], number: parts[2] };
+            });
+          }
+          return item;
+        })
+      })));
+      
+      // Set options from existing product data only
+      setGenderOptions(Array.from(uniqueGenders).sort());
+      setClothTypeOptions(Array.from(uniqueClothTypes).sort());
     } finally {
       setProductsLoading(false);
     }
@@ -488,6 +537,13 @@ export default function ProductPage() {
         // Fallback for invalid format
         return { gender: '', clothType: '', number: item };
       });
+      
+      console.log('Editing product - subsuitable processing:', {
+        original: product.subsuitable,
+        processed: subsuitable,
+        parsedItems: parsedItems
+      });
+      
       setEditableSubsuitableItems(parsedItems);
 
       // Handle leadtime - ensure we always have an array
@@ -994,9 +1050,17 @@ export default function ProductPage() {
       { gender, clothType, number }
     ]);
     
+    // Update options if new values are added
+    if (!genderOptions.includes(gender)) {
+      setGenderOptions(prev => [...prev, gender].sort());
+    }
+    if (!clothTypeOptions.includes(clothType)) {
+      setClothTypeOptions(prev => [...prev, clothType].sort());
+    }
+    
     // Clear inputs
     setSubsuitableInput({ gender: '', clothType: '', number: '' });
-  }, [subsuitableInput]);
+  }, [subsuitableInput, genderOptions, clothTypeOptions]);
 
   // Handler for removing subsuitable item
   const handleRemoveSubsuitable = useCallback((index: number) => {
@@ -1010,7 +1074,15 @@ export default function ProductPage() {
       updated[index] = { ...updated[index], [field]: value };
       return updated;
     });
-  }, []);
+    
+    // Update options if new values are added
+    if (field === 'gender' && value && !genderOptions.includes(value)) {
+      setGenderOptions(prev => [...prev, value].sort());
+    }
+    if (field === 'clothType' && value && !clothTypeOptions.includes(value)) {
+      setClothTypeOptions(prev => [...prev, value].sort());
+    }
+  }, [genderOptions, clothTypeOptions]);
 
   // Sync editableSubsuitableItems to form.subsuitable whenever editableSubsuitableItems changes
   useEffect(() => {
@@ -1063,7 +1135,7 @@ export default function ProductPage() {
       
       // Track which images were explicitly removed
       const deletedImages = {
-        img: processedForm.img === undefined && form.img !== undefined,
+        image3: processedForm.image3 === undefined && form.image3 !== undefined,
         image1: processedForm.image1 === undefined && form.image1 !== undefined,
         image2: processedForm.image2 === undefined && form.image2 !== undefined
       };
@@ -1075,7 +1147,7 @@ export default function ProductPage() {
         
         if (value === undefined || value === null || (value === '' && !isFAQField)) {
           // If this is an image field that was explicitly set to undefined, mark it for deletion
-          if ((key === 'img' || key === 'image1' || key === 'image2') && deletedImages[key as keyof typeof deletedImages]) {
+          if ((key === 'image3' || key === 'image1' || key === 'image2') && deletedImages[key as keyof typeof deletedImages]) {
             formData.append(`delete_${key}`, 'true');
           }
           return;
@@ -1096,7 +1168,7 @@ export default function ProductPage() {
         } else if (value instanceof File) {
           // Handle new file uploads
           formData.append(key, value);
-        } else if (key === 'img' || key === 'image1' || key === 'image2' || key === 'video') {
+        } else if (key === 'image3' || key === 'image1' || key === 'image2' || key === 'video') {
           // Only append image fields if they're files
           if (value instanceof File) {
             formData.append(key, value);
@@ -1220,9 +1292,34 @@ export default function ProductPage() {
       let subsuitable: string[] = [];
       if (selected.subsuitable) {
         if (Array.isArray(selected.subsuitable)) {
-          subsuitable = selected.subsuitable.filter(Boolean) as string[];
+          // If array elements contain commas, split them
+          subsuitable = selected.subsuitable
+            .flatMap(item => {
+              if (typeof item === 'string' && item.includes(',')) {
+                // Split by comma to get individual items
+                return item.split(',').map(s => s.trim()).filter(Boolean);
+              }
+              return item;
+            })
+            .filter(Boolean) as string[];
         }
       }
+
+      // Parse subsuitable items into editable format for display
+      const parsedItems: EditableSubsuitableItem[] = subsuitable.map(item => {
+        const parts = item.split('-');
+        if (parts.length >= 3) {
+          return {
+            gender: parts[0],
+            clothType: parts[1],
+            number: parts[2]
+          };
+        }
+        // Fallback for invalid format
+        return { gender: '', clothType: '', number: item };
+      });
+      
+      setEditableSubsuitableItems(parsedItems);
 
       // Handle leadtime - ensure we always have an array
       let leadtime: string[] = [];
@@ -1267,6 +1364,8 @@ export default function ProductPage() {
         altimg3: selected.altimg3 || "",
         video: selected.video,
         altvideo: selected.altvideo || "",
+        videourl: selected.videourl || "",
+        videoalt: selected.videoalt || "",
         purchasePrice: selected.purchasePrice !== undefined ? String(selected.purchasePrice) : "",
         salesPrice: selected.salesPrice !== undefined ? String(selected.salesPrice) : "",
         vendorFabricCode: selected.vendorFabricCode || "",
@@ -1282,16 +1381,58 @@ export default function ProductPage() {
         productTag: productTag,
         ogType: selected.ogType || "",
         twitterCard: selected.twitterCard || "summary_large_image",
-        ogImage_twitterimage: selected.ogImage_twitterimage || ""
+        ogImage_twitterimage: selected.ogImage_twitterimage || "",
+        productquestion1: selected.productquestion1 || "",
+        productquestion2: selected.productquestion2 || "",
+        productquestion3: selected.productquestion3 || "",
+        productquestion4: selected.productquestion4 || "",
+        productquestion5: selected.productquestion5 || "",
+        productquestion6: selected.productquestion6 || "",
+        productanswer1: selected.productanswer1 || "",
+        productanswer2: selected.productanswer2 || "",
+        productanswer3: selected.productanswer3 || "",
+        productanswer4: selected.productanswer4 || "",
+        productanswer5: selected.productanswer5 || "",
+        productanswer6: selected.productanswer6 || ""
       });
-      setImage3Preview(selected.image3 ? getImageUrl(selected.image3) || null : null);
-      setImage1Preview(selected.image1 ? getImageUrl(selected.image1) || null : null);
-      setImage2Preview(selected.image2 ? getImageUrl(selected.image2) || null : null);
-      setVideoPreview(selected.video ? getImageUrl(selected.video) || null : null);
+      // Set image previews and load their dimensions
+      const img1Url = getSafeImageUrl(selected.image1);
+      const img2Url = getSafeImageUrl(selected.image2);
+      const img3Url = getSafeImageUrl(selected.image3);
+      
+      setImage1Preview(img1Url);
+      setImage2Preview(img2Url);
+      setImage3Preview(img3Url);
+      setVideoPreview(getSafeImageUrl(selected.video));
+      
+      // Load dimensions for existing images
+      if (img1Url) {
+        const img = new window.Image();
+        img.onload = () => {
+          setFormImgDims(dims => ({ ...dims, image1: [img.width, img.height] }));
+        };
+        img.src = img1Url;
+      }
+      
+      if (img2Url) {
+        const img = new window.Image();
+        img.onload = () => {
+          setFormImgDims(dims => ({ ...dims, image2: [img.width, img.height] }));
+        };
+        img.src = img2Url;
+      }
+      
+      if (img3Url) {
+        const img = new window.Image();
+        img.onload = () => {
+          setFormImgDims(dims => ({ ...dims, image3: [img.width, img.height] }));
+        };
+        img.src = img3Url;
+      }
     } else {
       setForm(prev => ({ ...prev, name: value.label || "" }));
     }
-  }, [products, getId, setForm, setImage3Preview, setImage1Preview, setImage2Preview, setVideoPreview]);
+  }, [products, getId, setForm, setImage3Preview, setImage1Preview, setImage2Preview, setVideoPreview, setEditableSubsuitableItems, getSafeImageUrl, setFormImgDims]);
 
   // Add effect to auto-calculate oz and inch
   // Only auto-calculate oz if oz is empty (not set from backend or user input)
@@ -2157,6 +2298,46 @@ export default function ProductPage() {
                 />
               </Box>
 
+              {/* Measurements Section */}
+              <Box sx={{ gridColumn: '1 / -1', mt: 2, mb: 1 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#2c3e50', borderBottom: '1px solid #eee', pb: 1 }}>Measurements</Typography>
+              </Box>
+
+              <TextField
+                label="GSM"
+                type="number"
+                value={form.gsm || ""}
+                onChange={e => setForm(prev => ({ ...prev, gsm: e.target.value }))}
+                fullWidth
+                disabled={pageAccess === 'only view'}
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px' } }}
+              />
+              <TextField
+                label="OZ"
+                type="number"
+                value={form.oz || ""}
+                fullWidth
+                disabled
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px' } }}
+              />
+              <TextField
+                label="CM"
+                type="number"
+                value={form.cm || ""}
+                onChange={e => setForm(prev => ({ ...prev, cm: e.target.value }))}
+                fullWidth
+                disabled={pageAccess === 'only view'}
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px' } }}
+              />
+              <TextField
+                label="INCH"
+                type="number"
+                value={form.inch || ""}
+                fullWidth
+                disabled
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px' } }}
+              />
+
               {/* Subsuitable Builder - Custom Component */}
               <Box sx={{ gridColumn: '1 / -1', p: 2, bgcolor: '#f8f9fa', borderRadius: '8px', border: '1px solid #e0e0e0' }}>
                 <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 2, color: '#2c3e50' }}>
@@ -2165,48 +2346,39 @@ export default function ProductPage() {
                 
                 {/* Input Row */}
                 <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr auto' }, gap: 2, mb: 2 }}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>Gender</InputLabel>
-                    <Select
-                      value={subsuitableInput.gender}
-                      onChange={(e) => setSubsuitableInput(prev => ({ ...prev, gender: e.target.value }))}
-                      label="Gender"
-                      disabled={pageAccess === 'only view'}
-                      sx={{ bgcolor: 'white' }}
-                    >
-                      <MenuItem value="Male">Male</MenuItem>
-                      <MenuItem value="Female">Female</MenuItem>
-                      <MenuItem value="Unisex">Unisex</MenuItem>
-                      <MenuItem value="Kids">Kids</MenuItem>
-                    </Select>
-                  </FormControl>
+                  <Autocomplete
+                    freeSolo
+                    size="small"
+                    options={genderOptions}
+                    value={subsuitableInput.gender}
+                    onInputChange={(_, value) => setSubsuitableInput(prev => ({ ...prev, gender: value || '' }))}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        label="Gender"
+                        placeholder="Select or type gender..."
+                        sx={{ bgcolor: 'white' }}
+                      />
+                    )}
+                    disabled={pageAccess === 'only view'}
+                  />
 
-                  <FormControl fullWidth size="small">
-                    <InputLabel>Type of Cloth</InputLabel>
-                    <Select
-                      value={subsuitableInput.clothType}
-                      onChange={(e) => setSubsuitableInput(prev => ({ ...prev, clothType: e.target.value }))}
-                      label="Type of Cloth"
-                      disabled={pageAccess === 'only view'}
-                      sx={{ bgcolor: 'white' }}
-                    >
-                      <MenuItem value="T-Shirt">T-Shirt</MenuItem>
-                      <MenuItem value="Shirt">Shirt</MenuItem>
-                      <MenuItem value="Pants">Pants</MenuItem>
-                      <MenuItem value="Jeans">Jeans</MenuItem>
-                      <MenuItem value="Dress">Dress</MenuItem>
-                      <MenuItem value="Skirt">Skirt</MenuItem>
-                      <MenuItem value="Jacket">Jacket</MenuItem>
-                      <MenuItem value="Coat">Coat</MenuItem>
-                      <MenuItem value="Sweater">Sweater</MenuItem>
-                      <MenuItem value="Hoodie">Hoodie</MenuItem>
-                      <MenuItem value="Shorts">Shorts</MenuItem>
-                      <MenuItem value="Suit">Suit</MenuItem>
-                      <MenuItem value="Blazer">Blazer</MenuItem>
-                      <MenuItem value="Top">Top</MenuItem>
-                      <MenuItem value="Blouse">Blouse</MenuItem>
-                    </Select>
-                  </FormControl>
+                  <Autocomplete
+                    freeSolo
+                    size="small"
+                    options={clothTypeOptions}
+                    value={subsuitableInput.clothType}
+                    onInputChange={(_, value) => setSubsuitableInput(prev => ({ ...prev, clothType: value || '' }))}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        label="Type of Cloth"
+                        placeholder="Select or type cloth type..."
+                        sx={{ bgcolor: 'white' }}
+                      />
+                    )}
+                    disabled={pageAccess === 'only view'}
+                  />
 
                   <TextField
                     label="Number"
@@ -2253,46 +2425,37 @@ export default function ProductPage() {
                             border: '1px solid #e0e0e0'
                           }}
                         >
-                          <FormControl fullWidth size="small">
-                            <InputLabel>Gender</InputLabel>
-                            <Select
-                              value={item.gender}
-                              onChange={(e) => handleUpdateSubsuitableItem(index, 'gender', e.target.value)}
-                              label="Gender"
-                              disabled={pageAccess === 'only view'}
-                            >
-                              <MenuItem value="Male">Male</MenuItem>
-                              <MenuItem value="Female">Female</MenuItem>
-                              <MenuItem value="Unisex">Unisex</MenuItem>
-                              <MenuItem value="Kids">Kids</MenuItem>
-                            </Select>
-                          </FormControl>
+                          <Autocomplete
+                            freeSolo
+                            size="small"
+                            options={genderOptions}
+                            value={item.gender}
+                            onInputChange={(_, value) => handleUpdateSubsuitableItem(index, 'gender', value || '')}
+                            renderInput={(params) => (
+                              <TextField
+                                {...params}
+                                label="Gender"
+                                placeholder="Select or type gender..."
+                              />
+                            )}
+                            disabled={pageAccess === 'only view'}
+                          />
 
-                          <FormControl fullWidth size="small">
-                            <InputLabel>Type of Cloth</InputLabel>
-                            <Select
-                              value={item.clothType}
-                              onChange={(e) => handleUpdateSubsuitableItem(index, 'clothType', e.target.value)}
-                              label="Type of Cloth"
-                              disabled={pageAccess === 'only view'}
-                            >
-                              <MenuItem value="T-Shirt">T-Shirt</MenuItem>
-                              <MenuItem value="Shirt">Shirt</MenuItem>
-                              <MenuItem value="Pants">Pants</MenuItem>
-                              <MenuItem value="Jeans">Jeans</MenuItem>
-                              <MenuItem value="Dress">Dress</MenuItem>
-                              <MenuItem value="Skirt">Skirt</MenuItem>
-                              <MenuItem value="Jacket">Jacket</MenuItem>
-                              <MenuItem value="Coat">Coat</MenuItem>
-                              <MenuItem value="Sweater">Sweater</MenuItem>
-                              <MenuItem value="Hoodie">Hoodie</MenuItem>
-                              <MenuItem value="Shorts">Shorts</MenuItem>
-                              <MenuItem value="Suit">Suit</MenuItem>
-                              <MenuItem value="Blazer">Blazer</MenuItem>
-                              <MenuItem value="Top">Top</MenuItem>
-                              <MenuItem value="Blouse">Blouse</MenuItem>
-                            </Select>
-                          </FormControl>
+                          <Autocomplete
+                            freeSolo
+                            size="small"
+                            options={clothTypeOptions}
+                            value={item.clothType}
+                            onInputChange={(_, value) => handleUpdateSubsuitableItem(index, 'clothType', value || '')}
+                            renderInput={(params) => (
+                              <TextField
+                                {...params}
+                                label="Type of Cloth"
+                                placeholder="Select or type cloth type..."
+                              />
+                            )}
+                            disabled={pageAccess === 'only view'}
+                          />
 
                           <TextField
                             label="Number"
@@ -2388,7 +2551,7 @@ export default function ProductPage() {
                 />
               </Box>
 
-              {/* Currency, GSM, OZ, CM, INCH */}
+              {/* Currency */}
               <Autocomplete
                 freeSolo
                 options={currencyOptions}
@@ -2398,40 +2561,6 @@ export default function ProductPage() {
                   <TextField {...params} label="Currency" fullWidth sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px' } }} disabled={pageAccess === 'only view'} />
                 )}
                 disabled={pageAccess === 'only view'}
-              />
-              <TextField
-                label="GSM"
-                type="number"
-                value={form.gsm || ""}
-                onChange={e => setForm(prev => ({ ...prev, gsm: e.target.value }))}
-                fullWidth
-                disabled={pageAccess === 'only view'}
-                sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px' } }}
-              />
-              <TextField
-                label="OZ"
-                type="number"
-                value={form.oz || ""}
-                fullWidth
-                disabled
-                sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px' } }}
-              />
-              <TextField
-                label="CM"
-                type="number"
-                value={form.cm || ""}
-                onChange={e => setForm(prev => ({ ...prev, cm: e.target.value }))}
-                fullWidth
-                disabled={pageAccess === 'only view'}
-                sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px' } }}
-              />
-              <TextField
-                label="INCH"
-                type="number"
-                value={form.inch || ""}
-                fullWidth
-                disabled
-                sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px' } }}
               />
 
               {/* Pricing & Inventory Section */}
