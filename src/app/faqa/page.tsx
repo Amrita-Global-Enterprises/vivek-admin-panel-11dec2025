@@ -12,16 +12,18 @@ import {
   TableRow,
   Paper,
   IconButton,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
+
   Snackbar,
   Alert,
   Typography,
+  Card,
+  CardContent,
+  Breadcrumbs,
+  Link,
 } from '@mui/material';
-import { Edit, Delete } from '@mui/icons-material';
+import { Edit, Delete, ArrowBack, Save, Add, Home } from '@mui/icons-material';
 import RichTextEditor from '../../components/RichTextEditor';
+import { apiFetch } from '../../utils/apiFetch';
 
 interface FAQA {
   _id: string;
@@ -31,20 +33,21 @@ interface FAQA {
 
 export default function FAQAPage() {
   const [faqas, setFaqas] = useState<FAQA[]>([]);
-  const [open, setOpen] = useState(false);
+  const [view, setView] = useState<'list' | 'form'>('list');
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState({ question: '', answer: '' });
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
+  const [loading, setLoading] = useState(false);
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:7000';
 
   const fetchFAQAs = useCallback(async () => {
     try {
-      const response = await fetch(`${API_URL}/faqa`, {
-        cache: 'no-store',
+      const response = await apiFetch('/faqa', {
+        method: 'GET',
         headers: {
-          'Cache-Control': 'no-cache',
-        },
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.NEXT_PUBLIC_API_SECRET_KEY || 'rajeshsir'
+        }
       });
       const data = await response.json();
       if (data.success) {
@@ -53,7 +56,7 @@ export default function FAQAPage() {
     } catch (error) {
       console.error('Error fetching FAQAs:', error);
     }
-  }, [API_URL]);
+  }, []);
 
   useEffect(() => {
     fetchFAQAs();
@@ -67,23 +70,47 @@ export default function FAQAPage() {
       setEditId(null);
       setForm({ question: '', answer: '' });
     }
-    setOpen(true);
+    setView('form');
   };
 
-  const handleClose = () => {
-    setOpen(false);
+  const handleOpenForm = (faqa?: FAQA) => {
+    if (faqa) {
+      setEditId(faqa._id);
+      setForm({ question: faqa.question, answer: faqa.answer });
+    } else {
+      setEditId(null);
+      setForm({ question: '', answer: '' });
+    }
+    setView('form');
+  };
+
+  const handleBackToList = () => {
+    setView('list');
     setEditId(null);
     setForm({ question: '', answer: '' });
   };
 
   const handleSubmit = async () => {
+    if (!form.question.trim() || !form.answer.trim()) {
+      setSnackbar({
+        open: true,
+        message: 'Please fill in both question and answer',
+        severity: 'error',
+      });
+      return;
+    }
+
+    setLoading(true);
     try {
-      const url = editId ? `${API_URL}/faqa/${editId}` : `${API_URL}/faqa`;
+      const url = editId ? `/faqa/${editId}` : '/faqa';
       const method = editId ? 'PUT' : 'POST';
 
-      const response = await fetch(url, {
+      const response = await apiFetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.NEXT_PUBLIC_API_SECRET_KEY || 'rajeshsir'
+        },
         body: JSON.stringify(form),
       });
 
@@ -92,11 +119,11 @@ export default function FAQAPage() {
       if (data.success) {
         setSnackbar({
           open: true,
-          message: editId ? 'FAQA updated successfully' : 'FAQA created successfully',
+          message: editId ? 'FAQ updated successfully' : 'FAQ created successfully',
           severity: 'success',
         });
         fetchFAQAs();
-        handleClose();
+        handleBackToList();
       } else {
         throw new Error(data.message);
       }
@@ -106,15 +133,21 @@ export default function FAQAPage() {
         message: error instanceof Error ? error.message : 'Something went wrong',
         severity: 'error',
       });
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this FAQA?')) return;
+    if (!confirm('Are you sure you want to delete this FAQ?')) return;
 
     try {
-      const response = await fetch(`${API_URL}/faqa/${id}`, {
+      const response = await apiFetch(`/faqa/${id}`, {
         method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.NEXT_PUBLIC_API_SECRET_KEY || 'rajeshsir'
+        }
       });
 
       const data = await response.json();
@@ -122,7 +155,7 @@ export default function FAQAPage() {
       if (data.success) {
         setSnackbar({
           open: true,
-          message: 'FAQA deleted successfully',
+          message: 'FAQ deleted successfully',
           severity: 'success',
         });
         fetchFAQAs();
@@ -132,18 +165,108 @@ export default function FAQAPage() {
     } catch (error) {
       setSnackbar({
         open: true,
-        message: error instanceof Error ? error.message : 'Failed to delete FAQA',
+        message: error instanceof Error ? error.message : 'Failed to delete FAQ',
         severity: 'error',
       });
     }
   };
 
+  // Render Form View
+  if (view === 'form') {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Breadcrumbs sx={{ mb: 3 }}>
+          <Link href="/dashboard" sx={{ display: 'flex', alignItems: 'center', color: 'text.secondary', textDecoration: 'none' }}>
+            <Home sx={{ mr: 0.5 }} fontSize="small" />
+            Dashboard
+          </Link>
+          <Link onClick={handleBackToList} sx={{ cursor: 'pointer', color: 'text.secondary', textDecoration: 'none' }}>
+            FAQ Management
+          </Link>
+          <Typography color="text.primary">
+            {editId ? 'Edit FAQ' : 'Add FAQ'}
+          </Typography>
+        </Breadcrumbs>
+
+        <Card>
+          <CardContent>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+              <Typography variant="h5" sx={{ fontWeight: 600 }}>
+                {editId ? 'Edit FAQ' : 'Add New FAQ'}
+              </Typography>
+              <Button
+                startIcon={<ArrowBack />}
+                onClick={handleBackToList}
+                variant="outlined"
+              >
+                Back to List
+              </Button>
+            </Box>
+
+            <Box sx={{ mb: 3 }}>
+              <RichTextEditor
+                label="Question"
+                value={form.question}
+                onChange={(content) => setForm({ ...form, question: content })}
+                height={200}
+                placeholder="Enter question..."
+              />
+            </Box>
+
+            <Box sx={{ mb: 3 }}>
+              <RichTextEditor
+                label="Answer"
+                value={form.answer}
+                onChange={(content) => setForm({ ...form, answer: content })}
+                height={300}
+                placeholder="Enter answer..."
+              />
+            </Box>
+
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <Button
+                variant="contained"
+                startIcon={<Save />}
+                onClick={handleSubmit}
+                disabled={loading}
+              >
+                {loading ? 'Saving...' : (editId ? 'Update FAQ' : 'Create FAQ')}
+              </Button>
+              <Button
+                variant="outlined"
+                onClick={handleBackToList}
+                disabled={loading}
+              >
+                Cancel
+              </Button>
+            </Box>
+          </CardContent>
+        </Card>
+      </Box>
+    );
+  }
+
+  // Render List View
   return (
     <Box sx={{ p: 3 }}>
+      <Breadcrumbs sx={{ mb: 3 }}>
+        <Link href="/dashboard" sx={{ display: 'flex', alignItems: 'center', color: 'text.secondary', textDecoration: 'none' }}>
+          <Home sx={{ mr: 0.5 }} fontSize="small" />
+          Dashboard
+        </Link>
+        <Typography color="text.primary">
+          FAQ Management
+        </Typography>
+      </Breadcrumbs>
+
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-        <Typography variant="h4">FAQA Management</Typography>
-        <Button variant="contained" onClick={() => handleOpen()}>
-          Add FAQA
+        <Typography variant="h4">FAQ Management</Typography>
+        <Button 
+          variant="contained" 
+          startIcon={<Add />}
+          onClick={() => handleOpenForm()}
+        >
+          Add FAQ
         </Button>
       </Box>
 
@@ -166,7 +289,7 @@ export default function FAQAPage() {
                   <div dangerouslySetInnerHTML={{ __html: faqa.answer }} />
                 </TableCell>
                 <TableCell align="right">
-                  <IconButton onClick={() => handleOpen(faqa)} color="primary">
+                  <IconButton onClick={() => handleOpenForm(faqa)} color="primary">
                     <Edit />
                   </IconButton>
                   <IconButton onClick={() => handleDelete(faqa._id)} color="error">
@@ -179,35 +302,7 @@ export default function FAQAPage() {
         </Table>
       </TableContainer>
 
-      <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
-        <DialogTitle>{editId ? 'Edit FAQA' : 'Add FAQA'}</DialogTitle>
-        <DialogContent>
-          <Box sx={{ mt: 2, mb: 2 }}>
-            <RichTextEditor
-              label="Question"
-              value={form.question}
-              onChange={(content) => setForm({ ...form, question: content })}
-              height={200}
-              placeholder="Enter question..."
-            />
-          </Box>
-          <Box sx={{ mb: 2 }}>
-            <RichTextEditor
-              label="Answer"
-              value={form.answer}
-              onChange={(content) => setForm({ ...form, answer: content })}
-              height={300}
-              placeholder="Enter answer..."
-            />
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleClose}>Cancel</Button>
-          <Button onClick={handleSubmit} variant="contained">
-            {editId ? 'Update' : 'Create'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+
 
       <Snackbar
         open={snackbar.open}
